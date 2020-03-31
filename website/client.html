@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>WebSocket demo</title>
+	  	<link rel="stylesheet" href="cards.css">
+		<link rel="stylesheet" href="game.css">
+    </head>
+    <body>
+		<div id="init-els">
+			<input id="player-name" type="text" size="50">
+			<input id="game-join" type="button" value="Join Game">
+			<input id="game-start" type="button" value="Start Game">
+		</div>
+		<div id="game-board" style="visibility: hidden">
+			<div id="row1" class="threewide">
+				<div id="top-left" class="table">
+					<p style="position: absolute">Player 1</p>
+					<div class="trick"></div>
+					<div class="trick"></div>
+					<div class="trick"></div>
+				</div>
+				<div id="top-center" class="table">
+					<p style="position: absolute">Player 2</p>
+					<div class="trick"></div>
+					<div class="trick"></div>
+					<div class="trick"></div>
+				</div>
+				<div id="top-right" class="table">
+					<p style="position: absolute">Player 3</p>
+					<div class="trick"></div>
+					<div class="trick"></div>
+					<div class="trick"></div>
+				</div>
+			</div>
+			<div id="row2" class="threewide">
+				<div id="mid-left" class="table">
+					<p style="position: absolute">Player 4</p>
+					<div class="trick"></div>
+					<div class="trick"></div>
+					<div class="trick"></div>
+				</div>
+				<div style="position: relative">
+					<div id="status">
+						<h3 id="cur-player">Current player: </h3>
+						<h3 id="turn-stage">Turn Stage: </h3>
+						<h3 id="round"></h3>
+					</div>
+					<div id="deck-area">
+						<div id="take-throwcard" class="card back throwcard"></div>
+						<div id="draw-card" class="card back"></div>
+					</div>
+				</div>
+				<div id="mid-right" class="table">
+					<p style="position: absolute">Player 5</p>
+					<div class="trick"></div>
+					<div class="trick"></div>
+					<div class="trick"></div>
+				</div>
+			</div>
+			<div></div>
+			<div id="row3">
+				<div id="player-table" class="threewide">
+					<p style="position: absolute">Player Table</p>
+					<div class="trick player"></div>
+					<div class="trick player"></div>
+					<div class="trick player"></div>
+				</div>
+			</div>
+			<div id="player-hand" class="player">Player Hand</div>
+		</div>
+        <script>
+			var ws = undefined;
+
+			var maxCardId = 0;
+
+			var isDown = false;
+
+			var tricksValid = true;
+
+			var discardCard = undefined;
+
+			var turnStage = undefined;
+
+			var playerDivMap = {};
+
+			/*
+			function updatePlayers(playersList) {
+				document.querySelector("#players-list").innerHTML = "";
+				for (let i=0; i<playersList.length; i++) {
+					var playerLi = document.createElement('li');
+					var playerText = document.createTextNode(playersList[i]);
+					playerLi.appendChild(playerText)
+					document.querySelector("#players-list").appendChild(playerLi);
+				}
+			}*/
+
+			function setupTable(data) {
+				var positions = ["top-center", "mid-left", "mid-right",
+					"top-left", "top-right"];
+				var numPlayers = data["state"]["players"].length;
+				var myPos = data["state"]["players"].indexOf(data["player-name"]);
+				var order = [];
+				for (i=myPos+1; i<numPlayers; i++) {
+					order.unshift(i);
+				}
+				for (i=0; i<myPos; i++) {
+					order.unshift(i);
+				}
+				for (i=0; i<order.length; i++) {
+					console.log(document.querySelector("#"+positions[i]));
+					document.querySelector("#"+positions[i]).style.visibility =
+						"visible";
+					document.querySelector("#"+positions[i]+" > p").innerHTML =
+						data["state"]["players"][order[i]];
+					document.querySelector("#"+positions[i]).dataset.playername =
+						data["state"]["players"][order[i]];
+
+					playerDivMap[data["state"]["players"][order[i]]] =
+						positions[i];
+				}
+				document.querySelector("#player-table").dataset.playername =
+					data["player-name"];
+
+				/*document.querySelector('#game-board').addEventListener('dragover',
+					dragoverCard, false);
+				document.querySelector("#game-board").addEventListener('drop',
+					function(e) {
+						tricksValid = false;
+						addCardToTrick(e, isDown);
+						ws.send("validate-tables " + JSON.stringify(getAllTricks()));
+					}, false);*/
+			}
+
+			function setupTurn(state) {
+				if (state["turn-stage"] == "Discard") {
+					document.querySelector("#draw-card").onclick = null;
+					document.querySelector("#take-throwcard").onclick = null;
+				} else if (state["turn-stage"] == "Draw card") {
+					document.querySelector("#draw-card").onclick = drawCard;
+					if (state["throw-card"] !== "None") {
+						document.querySelector("#take-throwcard").onclick =
+							takeThrowcard;
+					}
+				}
+			}
+
+			function moveCard(e, card) {
+				var origCard = card.cloneNode();
+				var origParent = card.parentElement;
+				card.style.position = 'absolute';
+				card.style.zIndex = 2000000;
+				console.log(card.getBoundingClientRect());
+				var startLeft = card.getBoundingClientRect().left;
+				var startTop = card.getBoundingClientRect().top;
+				document.body.append(card);
+				moveAt(e.pageX, e.pageY);
+
+				function moveAt(pageX, pageY) {
+					card.style.left = pageX - card.offsetWidth / 2 + 'px';
+					card.style.top = pageY - card.offsetHeight / 2 + 'px';
+				}
+				function onMouseMove(e) {
+					moveAt(e.pageX, e.pageY);
+				}
+
+				function getDropTarget(elList) {
+					for (i=0; i<elList.length; i++) {
+						if (elList[i].id === "player-hand") {
+							return elList[i];
+						} else if (elList[i].classList.contains("trick")) {
+							return elList[i];
+						} else if (elList[i].id === "deck-area") {
+							return elList[i];
+						}
+					}
+					return null;
+				}
+				document.addEventListener('mousemove', onMouseMove);
+				card.onmouseup = function(e) {
+					var els = document.elementsFromPoint(e.clientX,
+						e.clientY);
+					console.log(els);
+					var dropTarget = getDropTarget(els);
+					console.log("Drop target: ");
+					console.log(dropTarget);
+					if (dropTarget === null ||
+						(dropTarget.id !== "player-hand" &&
+						!dropTarget.classList.contains("player") &&
+						!isDown) ||
+						 dropTarget.id === "deck-area") {
+						console.log(els);
+						if (dropTarget != null && dropTarget.id === "deck-area") {
+							if (discard(card)) {
+						 		console.log("discard succeeded?");
+								return false;
+							}
+						}
+						card.style.left = startLeft;
+						card.style.top = startTop;
+						card.remove();
+						card = origCard;
+						origParent.appendChild(card);
+						card.ondragstart = function(e) {
+							return false;
+						}
+						card.onmousedown = function(e) {
+							moveCard(e, card);
+						};
+						console.log("isDown: " + isDown);
+					 } else {
+						card.remove();
+						dropTarget.appendChild(card);
+						var parentBox = dropTarget.getBoundingClientRect();
+						card.style.left = ((e.clientX-parentBox.x) -
+					 (card.getBoundingClientRect().width/2)) + 'px';
+						 console.log(parentBox);
+						 card.style.top = 0;
+						 if (dropTarget.classList.contains("trick")) {
+							card.classList.add("small");
+							tricksValid = false;
+							ws.send("validate-tables " + JSON.stringify(getAllTricks()));
+						 } else {
+							card.classList.remove("small");
+							 if (origParent.classList.contains("trick")) {
+								ws.send("validate-tables " + JSON.stringify(getAllTricks()));
+							 }
+						 }
+					 }
+
+					document.removeEventListener('mousemove', onMouseMove);
+					card.onmouseup = null;
+				}
+			}
+
+			function addCard(suit, rank, pos, parent) {
+				var card = document.createElement("div");
+				card.id = "card-" + maxCardId;
+				maxCardId += 1;
+				card.dataset.rank = rank;
+				card.dataset.suit = suit;
+				card.draggable = true;
+				card.style.marginTop = ".2rem"
+				card.style.left = pos;
+				card.style.zIndex = 0;
+				card.ondragstart = function(e) {
+					return false;
+				}
+				card.onmousedown = function(e) {
+					return moveCard(e, card);
+				};
+				card.className = "card";
+				card.classList.add(suit);
+				card.classList.add("rank"+(rank+1));
+				card.classList.add("face");
+				card.disabled = true;
+				parent.appendChild(card);
+			}
+
+			function setupHand(cards) {
+				document.querySelector("#player-hand").innerHTML = "";
+				//document.querySelector("#player-hand").addEventListener('dragover',
+				//	dragoverCard, false);
+				//document.querySelector("#player-hand").addEventListener('drop',
+				//	dropCard, false);
+				for (let i=0; i<cards.length; i++) {
+					addCard(cards[i]["suit"], cards[i]["rank"], i+.5)+'rem',
+						 document.querySelector("#player-hand"));
+				}
+			}
+
+			function updateThrowcard(throwcard) {
+				if (throwcard === "None") {
+					document.querySelector("#take-throwcard").onclick =
+						null;
+					document.querySelector("#take-throwcard").style.visibility =
+						"hidden";
+				} else {
+					document.querySelector("#take-throwcard").style.visibility =
+						"visible";
+					document.querySelector("#take-throwcard").className =
+						"card " + throwcard["suit"] + " rank" +
+						(throwcard["rank"]+1) + " face";
+				}
+			}
+
+			function updateState(state, ourName, round) {
+				document.querySelector("#cur-player").innerHTML =
+					"Current player: " + state["cur-player"];
+
+				document.querySelector("#turn-stage").innerHTML =
+					"Turn stage: " + state["turn-stage"];
+
+				document.querySelector("#round").innerHTML = round;
+
+				turnStage = state["turn-stage"];
+			}
+
+			function getAllTricks() {
+				var tableDivs = document.querySelectorAll(".table");
+				var tables = {};
+				for (k=0; k<tableDivs.length; k++) {
+					if (tableDivs[k].dataset.playername === undefined) {
+						continue
+					}
+					var trickDivs =
+						document.querySelectorAll("#"+tableDivs[k].id+"> div");
+					tables[tableDivs[k].dataset.playername] =
+						getTricks(trickDivs);
+				}
+				console.log(document.querySelector("#player-table").dataset.playername);
+				tables[document.querySelector("#player-table").dataset.playername] =
+					getTricks(document.querySelectorAll("#player-table > div"));
+				console.log(tables);
+				console.log(JSON.stringify(tables));
+				return tables;
+			}
+
+			function getTricks(trickDivs) {
+				var tricks = []
+				for (i=0; i<trickDivs.length; i++) {
+					var trick = [];
+					for (j=0; j<trickDivs[i].children.length; j++) {
+						t = {'rank':
+						parseInt(trickDivs[i].children[j].dataset.rank, 10) + 1,
+							 'suit': trickDivs[i].children[j].dataset.suit,
+							 'x':
+							trickDivs[i].children[j].getBoundingClientRect().x};
+
+						trick.push(t);
+					}
+					tricks.push(trick);
+				}
+				console.log(tricks);
+				return tricks;
+			}
+
+			/*
+			function getTricks() {
+				var trickDivs = document.querySelectorAll("#player-table > div");
+				var tricks = [];
+				for (i=0; i<trickDivs.length; i++) {
+					var trick = [];
+					for (j=0; j<trickDivs[i].children.length; j++) {
+						t = {'rank':
+						parseInt(trickDivs[i].children[j].dataset.rank, 10) + 1,
+							 'suit': trickDivs[i].children[j].dataset.suit,
+							 'x':
+							trickDivs[i].children[j].getBoundingClientRect().x};
+
+						trick.push(t);
+					}
+					tricks.push(trick);
+				}
+				console.log(tricks);
+				console.log(JSON.stringify(tricks));
+				return tricks;
+			}*/
+
+			function discard(card) {
+				console.log("Discard");
+				if (turnStage !== "Discard") {
+					console.log("Not right turn stage");
+					return false;
+				}
+				if (tricksValid) {
+					ws.send("discard " + card.dataset.rank + " " +
+						card.dataset.suit + " " +
+						JSON.stringify(getAllTricks()));
+					//document.querySelector('#player-hand').removeChild(card);
+					card.remove();
+					console.log("Tricks valid, returning true");
+					return true;
+				} else {
+					console.log("Can't discard, tricks invalid");
+					return false;
+				}
+			}
+
+			/*
+			function setHandDiscardable() {
+				var cards = document.querySelector('#player-hand').children;
+				for (i=0; i<cards.length; i++) {
+					cards[i].onclick = function(e) {
+						discard(e.target);
+						/*
+						if (tricksValid) {
+							ws.send("discard " + e.target.dataset.rank + " " +
+								e.target.dataset.suit);
+							document.querySelector('#player-hand').removeChild(e.target);
+						} else {
+							console.log("Can't discard, tricks invalid");
+						}
+					};
+				}
+			}
+
+			function removeHandDiscardable() {
+				var cards = document.querySelector('#player-hand').children;
+				for (i=0; i<cards.length; i++) {
+					cards[i].onclick = null;
+				}
+			}*/
+
+			function resetTricks() {
+				var playerHand = document.querySelector("#player-hand");
+				var cards = document.querySelectorAll("#player-table > div > div");
+				for (i=0; i<cards.length; i++) {
+					//var card = document.querySelector("#"+trickCards[j].id)
+					var card = cards[i];
+					cardX = card.getBoundingClientRect().x;
+					card.remove();
+					playerHand.appendChild(card);
+					card.classList.remove("small");
+					card.style.left = cardX + 'px';
+					console.log(card);
+				}
+			}
+
+			function updateTricks(tricks, myName) {
+				console.log(tricks);
+				for (var name in tricks) {
+					if (name === myName) {
+						continue;
+					}
+					var pname = playerDivMap[name];
+					if (tricks.hasOwnProperty(name)) {
+						//console.log(name + ": " + tricks[name].length)
+						for (i=0; i<tricks[name].length; i++) {
+							var trickDivs = document.querySelectorAll("#"+pname
+								+ " > div");
+							//console.log(trickDivs);
+							trickDivs[i].innerHTML = "";
+							for (j=0; j<tricks[name][i].length; j++) {
+								console.log(i + " " + j);
+								console.log(tricks[name][i][j]);
+								var card = document.createElement("div");
+								card.id = "card-" + maxCardId;
+								maxCardId += 1;
+								card.dataset.rank =
+						 (tricks[name][i][j]["rank"]-1);
+								card.dataset.suit = tricks[name][i][j]["suit"];
+								card.style.top =
+						 trickDivs[i].getBoundingClientRect().top + "px";
+								card.style.left = (j+.5)+'rem';
+								card.style.marginTop = ".2rem"
+								card.draggable = true;
+								card.className = "card";
+								card.classList.add(tricks[name][i][j]["suit"]);
+								card.classList.add("rank"+(tricks[name][i][j]["rank"]));
+								card.classList.add("face");
+								card.classList.add("small");
+								card.disabled = true;
+				card.addEventListener('dragstart', startCardDrag, false);
+				card.addEventListener('dragover', dragoverCard, false);
+				card.addEventListener('drop', dropCard, false);
+				card.addEventListener('dragend', function(e) {
+					e.target.style.visibility = 'visible';
+				}, false);
+								document.querySelector("#game-board").addEventListener('drop',
+						 dropCard, false);
+								//console.log(trickDivs[i]);
+						 		//console.log(trickDivs[i].getBoundingClientRect());
+								trickDivs[i].appendChild(card);
+								//document.querySelector("#"+pname).appendChild(card);
+							}
+						}
+					}
+				}
+			}
+
+			function wsRecv(e) {
+				const data = JSON.parse(e.data)
+				console.log(data)
+
+				isDown = data["is-down"];
+
+				switch(data["event"]) {
+					case "players-changed":
+						break;
+					case "game-started":
+						document.querySelector("#game-board").style.visibility = "visible";
+						document.querySelector("#init-els").innerHTML = "";
+
+						setupTable(data);
+						/* fall through */
+					case "round-started":
+						setupHand(data["state"]["hand"]);
+						/* fall through */
+					case "turn-started":
+						//removeHandDiscardable();
+						updateTricks(data["state"]["tricks"],
+							data["player-name"]);
+
+						if (data["state"]["cur-player"] === data["player-name"]) {
+							document.querySelector("#draw-card").onclick = drawCard;
+							if (data["state"]["throw-card"] !== "None") {
+								document.querySelector("#take-throwcard").onclick =
+									takeThrowcard;
+							}
+						}
+						break;
+					case "drew-card":
+						document.querySelector("#draw-card").onclick = null;
+						document.querySelector("#take-throwcard").onclick = null;
+
+						if (data["state"]["cur-player"] === data["player-name"]) {
+							var maxId = 0;
+							var cards = document.querySelector('#player-hand').children;
+							for (i=0; i<cards.length; i++) {
+								if (parseInt(cards[i].id.split("-")[1], 10) > maxId) {
+									maxId = parseInt(cards[i].id.split("-")[1], 10);
+								}
+							}
+							var newCard =
+								data["state"]["hand"][data["state"]["hand"].length-1];
+							addCard(newCard["suit"], newCard["rank"], maxId+1, '50%');
+							//setHandDiscardable();
+						}
+						break;
+					case 'tricks-valid':
+						tricksValid = true;
+						/*
+						ws.send("discard " + discardCard.dataset.rank + " " +
+							discardCard.dataset.suit);
+						document.querySelector('#player-hand').removeChild(discardCard);
+						discardCard = undefined;*/
+						break;
+					case 'tricks-invalid':
+						//discardCard = undefined;
+						//resetTricks();
+						break;
+					default:
+						console.log("Unkown event " + data["event"]);
+				}
+
+				updateThrowcard(data["state"]["throw-card"]);
+				updateState(data["state"], data["player-name"], data["round"]);
+			}
+
+			function joinGame(name) {
+				if (ws == undefined) {
+					ws = new WebSocket("ws://127.0.0.1:5678/testing/"+name);
+					ws.onmessage = wsRecv;
+				}
+			}
+
+			document.querySelector('#game-join').onclick = function(e) {
+				var playerName = document.querySelector('#player-name').value;
+				joinGame(playerName);
+			};
+
+			document.querySelector('#game-start').onclick = function(e) {
+				ws.send("start-game");
+			};
+
+			function drawCard(e) {
+			//document.querySelector('#draw-card').onclick = function(e) {
+				document.querySelector("#draw-card").onclick = null;
+				ws.send("draw-card");
+			}//;
+
+			function takeThrowcard(e) {
+			//document.querySelector('#take-throwcard').onclick = function(e) {
+				document.querySelector('#take-throwcard').onclick = null;
+				document.querySelector('#take-throwcard').style.visibility =
+					"hidden";
+				ws.send("take-throwcard");
+			}//;
+
+        </script>
+		<script type="text/javascript" src="dragcards.js"></script
+    </body>
+</html>
