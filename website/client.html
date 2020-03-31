@@ -156,7 +156,23 @@
 					}
 					return null;
 				}
+
+				function resetCard(card, left, top, origCard, origParent) {
+					card.style.left = startLeft;
+					card.style.top = startTop;
+					card.remove();
+					card = origCard;
+					origParent.appendChild(card);
+					card.ondragstart = function(e) {
+						return false;
+					}
+					card.onmousedown = function(e) {
+						moveCard(e, card);
+					};
+				}
+
 				document.addEventListener('mousemove', onMouseMove);
+
 				card.onmouseup = function(e) {
 					var els = document.elementsFromPoint(e.clientX,
 						e.clientY);
@@ -164,36 +180,42 @@
 					var dropTarget = getDropTarget(els);
 					console.log("Drop target: ");
 					console.log(dropTarget);
-					if (dropTarget === null ||
-						(dropTarget.id !== "player-hand" &&
-						!dropTarget.classList.contains("player") &&
-						!isDown) ||
-						 dropTarget.id === "deck-area") {
-						console.log(els);
-						if (dropTarget != null && dropTarget.id === "deck-area") {
-							if (discard(card)) {
-						 		console.log("discard succeeded?");
-								return false;
-							}
-						}
-						card.style.left = startLeft;
-						card.style.top = startTop;
-						card.remove();
-						card = origCard;
-						origParent.appendChild(card);
-						card.ondragstart = function(e) {
+					/* dropped on nothing (e.g. game board) */
+					if (dropTarget === null) {
+						console.log("dropped no where");
+						resetCard(card, startLeft, startTop, origCard,
+							origParent);
+					/* dropped on deck area (discarding) */
+					} else if (dropTarget.id === "deck-area") {
+						console.log("dropped in discard area");
+						if (discard(card)) {
+							console.log("discard succeeded?");
 							return false;
 						}
-						card.onmousedown = function(e) {
-							moveCard(e, card);
-						};
-						console.log("isDown: " + isDown);
-					 } else {
+						resetCard(card, startLeft, startTop, origCard,
+							origParent);
+					/* dropped on a non-player trick but not down */
+					} else if (dropTarget.id !== "player-hand" &&
+							  !dropTarget.classList.contains("player") &&
+							  !isDown) {
+						console.log("dropped in non-player trick but not down yet");
+						resetCard(card, startLeft, startTop, origCard,
+							origParent);
+					/* dropped on a non-player trick but not the original one */
+					} else if (dropTarget.classList.contains("trick") &&
+							   !dropTarget.classList.contains("player") &&
+							   dropTarget !== origParent &&
+							   origParent.id !== "player-hand") {
+						console.log("dropped on a non-player trick but not the original one");
+						resetCard(card, startLeft, startTop, origCard,
+							origParent);
+					} else {
+						console.log("dropped on new valid place");
 						card.remove();
 						dropTarget.appendChild(card);
 						var parentBox = dropTarget.getBoundingClientRect();
 						card.style.left = ((e.clientX-parentBox.x) -
-					 (card.getBoundingClientRect().width/2)) + 'px';
+							 (card.getBoundingClientRect().width/2)) + 'px';
 						 console.log(parentBox);
 						 card.style.top = 0;
 						 if (dropTarget.classList.contains("trick")) {
@@ -235,12 +257,13 @@
 				card.classList.add("face");
 				card.disabled = true;
 				parent.appendChild(card);
+				return card;
 			}
 
 			function setupHand(cards) {
 				document.querySelector("#player-hand").innerHTML = "";
 				for (let i=0; i<cards.length; i++) {
-					addCard(cards[i]["suit"], cards[i]["rank"], i+.5)+'rem',
+					addCard(cards[i]["suit"], cards[i]["rank"], (i+.5)+'rem',
 						 document.querySelector("#player-hand"));
 				}
 			}
@@ -330,20 +353,6 @@
 				}
 			}
 
-			function resetTricks() {
-				var playerHand = document.querySelector("#player-hand");
-				var cards = document.querySelectorAll("#player-table > div > div");
-				for (i=0; i<cards.length; i++) {
-					var card = cards[i];
-					cardX = card.getBoundingClientRect().x;
-					card.remove();
-					playerHand.appendChild(card);
-					card.classList.remove("small");
-					card.style.left = cardX + 'px';
-					console.log(card);
-				}
-			}
-
 			function updateTricks(tricks, myName) {
 				console.log(tricks);
 				for (var name in tricks) {
@@ -360,32 +369,11 @@
 							for (j=0; j<tricks[name][i].length; j++) {
 								console.log(i + " " + j);
 								console.log(tricks[name][i][j]);
-								var card = document.createElement("div");
-								card.id = "card-" + maxCardId;
-								maxCardId += 1;
-								card.dataset.rank =
-						 (tricks[name][i][j]["rank"]-1);
-								card.dataset.suit = tricks[name][i][j]["suit"];
-								card.style.top =
-						 trickDivs[i].getBoundingClientRect().top + "px";
-								card.style.left = (j+.5)+'rem';
-								card.style.marginTop = ".2rem"
-								card.draggable = true;
-								card.className = "card";
-								card.classList.add(tricks[name][i][j]["suit"]);
-								card.classList.add("rank"+(tricks[name][i][j]["rank"]));
-								card.classList.add("face");
+								var suit = tricks[name][i][j]["suit"];
+								var rank = (tricks[name][i][j]["rank"]-1);
+								var card = addCard(suit, rank, (j+.5)+'rem', trickDivs[i]);
 								card.classList.add("small");
-								card.disabled = true;
-				card.addEventListener('dragstart', startCardDrag, false);
-				card.addEventListener('dragover', dragoverCard, false);
-				card.addEventListener('drop', dropCard, false);
-				card.addEventListener('dragend', function(e) {
-					e.target.style.visibility = 'visible';
-				}, false);
-								document.querySelector("#game-board").addEventListener('drop',
-						 dropCard, false);
-								trickDivs[i].appendChild(card);
+								card.classList.add("fixed");
 							}
 						}
 					}
@@ -436,7 +424,8 @@
 							}
 							var newCard =
 								data["state"]["hand"][data["state"]["hand"].length-1];
-							addCard(newCard["suit"], newCard["rank"], maxId+1, '50%');
+							addCard(newCard["suit"], newCard["rank"], '50%',
+								document.querySelector('#player-hand'));
 						}
 						break;
 					case 'tricks-valid':
