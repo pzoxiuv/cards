@@ -229,9 +229,14 @@ class Game():
                 print('less than 4')
                 return False
             order = sorted(trick, key=lambda x: x['x'])
+            prev = None
             prev = int(order[0]['rank'])
             print(order)
             for c in order[1:]:
+                if prev is None:
+                    if not is_redtwo(c):
+                        prev = int(c['rank'])
+                    continue
                 if is_redtwo(c):
                     prev = prev + 1
                     continue
@@ -276,8 +281,6 @@ class Game():
             if not self.validate_tricks(t):
                 all_valid = False
                 self.players[name].down = False
-            elif len([x for x in t if len(x) > 0]) > 0:
-                self.players[name].down = True
         return all_valid
 
     # called after discard
@@ -288,6 +291,10 @@ class Game():
             print('finalize tables for ' + name)
             assert self.validate_tricks(t)
             self.players[name].tricks = [sorted(x, key=lambda y: y['x']) for x in t]
+            if len([x for x in t if len(x) > 0]) > 0:
+                self.players[name].down = True
+            else:
+                self.players[name].down = False
             print(self.players[name].tricks)
 
     def discard(self, rank, suit, name) -> None:
