@@ -52,7 +52,7 @@ async def handle_msg(game, msg, player_name):
 
     return resp
 
-async def time(websocket, path):
+async def run_server(websocket, path):
     _, game_name, player_name = path.split('/')
     if game_name not in games:
         games[game_name] = Game()
@@ -74,13 +74,6 @@ async def time(websocket, path):
     print('Removing ' + str(player_name))
     game.remove_player(player_name)
 
-    """
-    while True:
-        now = datetime.datetime.utcnow().isoformat() + "Z"
-        await websocket.send(now)
-        await asyncio.sleep(random.random() * 3)
-    """
-
 async def process_request(path, req_headers):
     print(path)
     print(req_headers)
@@ -101,7 +94,7 @@ async def process_request(path, req_headers):
         print(headers)
         return http.HTTPStatus.OK, headers, c
 
-start_server = websockets.serve(time, "127.0.0.1", 5678,
+start_server = websockets.serve(run_server, "127.0.0.1", 5678,
         process_request=process_request)
 print(type(start_server))
 
