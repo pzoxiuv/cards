@@ -45,6 +45,8 @@
 						<h3 id="cur-player">Current player: </h3>
 						<h3 id="turn-stage">Turn Stage: </h3>
 						<h3 id="round"></h3>
+						<h3 id="score"></h3>
+						<input id="take-take" type="button" value="Take Take">
 					</div>
 					<div id="deck-area">
 						<div id="take-throwcard" class="card back throwcard"></div>
@@ -83,6 +85,9 @@
 			var turnStage = undefined;
 
 			var playerDivMap = {};
+
+			var curPlayer = undefined;
+			var myName = undefined;
 
 			function setupTable(data) {
 				var positions = ["top-center", "mid-left", "mid-right",
@@ -283,16 +288,17 @@
 				}
 			}
 
-			function updateState(state, ourName, round) {
+			function updateState(state, mn, round, score, cp) {
 				document.querySelector("#cur-player").innerHTML =
 					"Current player: " + state["cur-player"];
-
 				document.querySelector("#turn-stage").innerHTML =
 					"Turn stage: " + state["turn-stage"];
-
 				document.querySelector("#round").innerHTML = round;
+				document.querySelector("#score").innerHTML = score;
 
 				turnStage = state["turn-stage"];
+				curPlayer = cp;
+				myName = mn;
 			}
 
 			function getAllTricks() {
@@ -336,7 +342,7 @@
 
 			function discard(card) {
 				console.log("Discard");
-				if (turnStage !== "Discard") {
+				if (turnStage !== "Discard" || curPlayer !== myName) {
 					console.log("Not right turn stage");
 					return false;
 				}
@@ -380,6 +386,13 @@
 				}
 			}
 
+			function clearPlayerTricks() {
+				var playerTricks = document.querySelectorAll("#player-table > div");
+				for (i=0; i<playerTricks.length; i++) {
+					playerTricks[i].innerHTML = "";
+				}
+			}
+
 			function wsRecv(e) {
 				const data = JSON.parse(e.data)
 				console.log(data)
@@ -397,6 +410,7 @@
 						/* fall through */
 					case "round-started":
 						setupHand(data["state"]["hand"]);
+						clearPlayerTricks();
 						/* fall through */
 					case "turn-started":
 						updateTricks(data["state"]["tricks"],
@@ -410,18 +424,30 @@
 							}
 						}
 						break;
+					case "took-take":
+						if (data["state"]["got-take"] === data["player-name"]) {
+							var newCard =
+								data["state"]["hand"][data["state"]["hand"].length-1];
+							addCard(newCard["suit"], newCard["rank"], '50%',
+								document.querySelector('#player-hand'));
+							newCard =
+								data["state"]["hand"][data["state"]["hand"].length-2];
+							addCard(newCard["suit"], newCard["rank"], '55%',
+								document.querySelector('#player-hand'));
+						}
 					case "drew-card":
 						document.querySelector("#draw-card").onclick = null;
 						document.querySelector("#take-throwcard").onclick = null;
 
 						if (data["state"]["cur-player"] === data["player-name"]) {
+						/*
 							var maxId = 0;
 							var cards = document.querySelector('#player-hand').children;
 							for (i=0; i<cards.length; i++) {
 								if (parseInt(cards[i].id.split("-")[1], 10) > maxId) {
 									maxId = parseInt(cards[i].id.split("-")[1], 10);
 								}
-							}
+							}*/
 							var newCard =
 								data["state"]["hand"][data["state"]["hand"].length-1];
 							addCard(newCard["suit"], newCard["rank"], '50%',
@@ -439,7 +465,8 @@
 				}
 
 				updateThrowcard(data["state"]["throw-card"]);
-				updateState(data["state"], data["player-name"], data["round"]);
+				updateState(data["state"], data["player-name"], data["round"],
+					data["state"]["score"], data["state"]["cur-player"]);
 			}
 
 			function joinGame(name) {
@@ -452,6 +479,12 @@
 			document.querySelector('#game-join').onclick = function(e) {
 				var playerName = document.querySelector('#player-name').value;
 				joinGame(playerName);
+			};
+
+			document.querySelector('#take-take').onclick = function(e) {
+				if (turnStage === "Draw card") {
+					ws.send("take-take");
+				}
 			};
 
 			document.querySelector('#game-start').onclick = function(e) {

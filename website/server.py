@@ -24,6 +24,13 @@ async def send_msg(ws, player_name, down, rnd, event, state):
     except websockets.exceptions.ConnectionClosedOK:
         print('uh')
 
+async def send_take_info(game, got_take):
+    for name, player in game.get_players().items():
+        state = game.get_state(name)
+        state['got-take'] = got_take
+        await send_msg(player.data, name, game.players[name].down,
+                game.get_round(), 'took-take', state)
+
 async def handle_msg(game, msg, player_name):
     msg_split = msg.split()
     event = msg_split[0]
@@ -34,12 +41,17 @@ async def handle_msg(game, msg, player_name):
         game.take_throwcard(player_name)
         resp = 'drew-card'
     elif event == 'draw-card':
+        got_take = game.do_takes(player_name)
         game.draw_card(player_name)
+        if got_take is not None:
+            await send_take_info(game, got_take)
         resp = 'drew-card'
     elif event == 'discard':
-        game.discard(msg_split[1], msg_split[2], player_name)
         game.finalize_tables(json.loads(' '.join(msg_split[3:])))
-        resp = 'turn-started'
+        if game.discard(msg_split[1], msg_split[2], player_name):
+            resp = 'round-started'
+        else:
+            resp = 'turn-started'
     elif event == 'validate-tables':
         print(' '.join(msg_split[1:]))
         tricks = json.loads(' '.join(msg_split[1:]))
@@ -49,6 +61,9 @@ async def handle_msg(game, msg, player_name):
             resp = 'tricks-valid'
         else:
             resp = 'tricks-invalid'
+    elif event == 'take-take':
+        game.players[player_name].pending_take = True
+        resp = None
 
     return resp
 
@@ -66,7 +81,10 @@ async def run_server(websocket, path):
     async for msg in websocket:
         print('recvd: ' + msg)
         resp = await handle_msg(game, msg, player_name)
+        if resp is None:
+            continue
         print('sending: ' + resp)
+        print()
         for name, player in game.get_players().items():
             await send_msg(player.data, name, game.players[name].down,
                     game.get_round(), resp, game.get_state(name))

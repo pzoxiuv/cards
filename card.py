@@ -9,6 +9,10 @@ class Suit(Enum):
     HEARTS = '\u2665'
     DIAMONDS = '\u2666'
 
+    @staticmethod
+    def from_str(s):
+        return Suit[s.upper()]
+
     def __str__(self):
         return self.value
 
@@ -29,6 +33,23 @@ class Rank(Enum):
     JACK = 11
     QUEEN = 12
     KING = 13
+
+    @staticmethod
+    def from_int(i):
+        ret = [Rank.ACE,
+               Rank.TWO,
+               Rank.THREE,
+               Rank.FOUR,
+               Rank.FIVE,
+               Rank.SIX,
+               Rank.SEVEN,
+               Rank.EIGHT,
+               Rank.NINE,
+               Rank.TEN,
+               Rank.JACK,
+               Rank.QUEEN,
+               Rank.KING]
+        return ret[i-1]
 
     def __str__(self):
         return self.name[0] + self.name.lower()[1:]
@@ -97,6 +118,7 @@ class Player():
         self.name = name
         self.score = 0
         self.down = False
+        self.pending_take = False
 
         self.tricks = []
 
@@ -125,6 +147,7 @@ class Player():
 
 class Game():
     def __init__(self):
+
         self.deck = Deck()
         self.players = {}
         self.player_order = None
@@ -133,8 +156,17 @@ class Game():
         self.started = False
         self.can_take_throwcard = False
 
-        self.round = 1;
+        self.round = 0;
+        """
         self.reqs = [{'threes': 2, 'fours': 0, 'empty': 1},
+                     {'threes': 1, 'fours': 1, 'empty': 1},
+                     {'threes': 0, 'fours': 2, 'empty': 1},
+                     {'threes': 3, 'fours': 0, 'empty': 0},
+                     {'threes': 2, 'fours': 1, 'empty': 0},
+                     {'threes': 1, 'fours': 2, 'empty': 0},
+                     {'threes': 0, 'fours': 3, 'empty': 0}]
+        """
+        self.reqs = [{'threes': 1, 'fours': 0, 'empty': 2},
                      {'threes': 1, 'fours': 1, 'empty': 1},
                      {'threes': 0, 'fours': 2, 'empty': 1},
                      {'threes': 3, 'fours': 0, 'empty': 0},
@@ -150,6 +182,13 @@ class Game():
         self.player_order = cycle(list(self.players.keys()))
         self.cur_player = next(self.player_order)
 
+    def mock_hand(self) -> List[Card]:
+        ret = []
+        ret.append(Card(Suit.CLUBS, Rank.ACE))
+        ret.append(Card(Suit.CLUBS, Rank.ACE))
+        ret.append(Card(Suit.CLUBS, Rank.ACE))
+        return ret
+
     def add_player(self, data, name: str) -> None:
         if name in self.players:
             self.players[name].data = data
@@ -158,6 +197,35 @@ class Game():
             player = Player(data, name)
             player.hand = self.deck.draw_hand()
             self.players[name] = player
+
+            player.hand = self.mock_hand();
+
+    def do_takes(self, name):
+        if not self.can_take_throwcard:
+            return
+
+        gets_take = None
+        print(self.cur_player)
+
+        # The immediate next player can get it, since the throw card
+        # is from the player prior to the current one (if the current player
+        # wanted the throw card the could've just taken it)
+        p = next(self.player_order)
+        if self.players[p].pending_take:
+            gets_take = p
+        while p != self.cur_player:
+            p = next(self.player_order)
+            if self.players[p].pending_take and gets_take is None:
+                gets_take = p
+
+        print('giving take to', gets_take)
+        if gets_take is not None:
+            self.players[gets_take].add_card(self.deck.discard_pile.pop())
+            self.can_take_throwcard = False
+            self.players[gets_take].add_card(self.deck.draw())
+            return gets_take
+        else:
+            return None
 
     def remove_player(self, name) -> None:
         self.players[name].playing = False
@@ -283,6 +351,11 @@ class Game():
                 self.players[name].down = False
         return all_valid
 
+    def remove_tricks_from_hand(self, name) -> None:
+        for t in self.players[name].tricks:
+            for c in t:
+                self.players[name].discard(int(c['rank'])-1, c['suit'])
+
     # called after discard
     def finalize_tables(self, tricks) -> None:
         if len(tricks) == 0:
@@ -293,9 +366,11 @@ class Game():
             self.players[name].tricks = [sorted(x, key=lambda y: y['x']) for x in t]
             if len([x for x in t if len(x) > 0]) > 0:
                 self.players[name].down = True
+                self.remove_tricks_from_hand(name)
             else:
                 self.players[name].down = False
             print(self.players[name].tricks)
+            print(self.players[name].hand)
 
     def discard(self, rank, suit, name) -> None:
         assert name == self.cur_player
@@ -305,19 +380,32 @@ class Game():
             suit.strip()))
         self.can_take_throwcard = True
 
-        if len(self.players[name].hand) == 0:
-            self.end_round()
- 
         self.cur_player = next(self.player_order)
         self.turn_stage = TurnStage.DRAW_CARD
 
+        for p in self.players.values():
+            p.pending_take = False
+
+        print(self.players[name].hand)
+        if len(self.players[name].hand) == 0:
+            self.end_round()
+            return True
+        else:
+            return False
+ 
+
     def end_round(self) -> None:
         self.round += 1
+        self.deck = Deck()
         for p in self.players.values():
             p.score_hand()
+            """
             for _ in range(0, len(p.hand)):
                 self.deck.discard_pile.append(p.hand.pop())
-            assert len(p.hand) == 0
+            for t in p.tricks:
+                for c in t:
+                    self.deck.discard_pile.append(c)
+            """
             p.hand = self.deck.draw_hand()
             p.tricks = []
             p.down = False
@@ -331,6 +419,7 @@ class Game():
                 'hand': self.players[name].get_hand(),
                 'turn-stage': str(self.turn_stage),
                 'can-take-throwcard': self.can_take_throwcard,
+                'score': self.players[name].score,
                 'tricks': {n: self.players[n].tricks for n in
                     self.players.keys()}}
         if len(self.deck.discard_pile) > 0:
