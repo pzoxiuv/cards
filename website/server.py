@@ -9,88 +9,137 @@ import sys
 
 sys.path.append('..')
 
-from card import Game
+#from card import Game
+from card import Deck
 
 games = {}
+#lobby = []
 
-async def send_msg(ws, player_name, down, rnd, event, state):
-    msg = { 'player-name': player_name,
-            'event': event,
-            'is-down': down,
-            'round': rnd,
-            'state': state }
+class Player():
+    def __init__(self, name, ws):
+        self.name = name
+        self.ws = ws
+        self.hand = []
+
+class Game():
+    def __init__(self):
+        self.deck = Deck(double=True)
+        self.player_list = {}
+
+    def add_player(self, ws, name):
+        self.player_list[name] = Player(name, ws)
+
+    @property
+    def players(self):
+        return list(self.player_list.keys())
+
+    def player_ws(self, name):
+        return self.player_list[name].ws
+
+    def player_hand(self, name):
+        return self.player_list[name].hand
+
+    def set_ws(self, name, ws):
+        self.player_list[name].ws = ws
+
+    def set_hand(self, name, hand):
+        for c in hand:
+            c['rank'] = int(c['rank'])
+        self.player_list[name].hand = hand
+        print(self.player_list[name].hand)
+
+async def send_msg(ws, msg):
     try:
         await ws.send(json.dumps(msg))
     except websockets.exceptions.ConnectionClosedOK:
         print('uh')
 
-async def send_take_info(game, got_take):
-    for name, player in game.get_players().items():
-        state = game.get_state(name)
-        state['got-take'] = got_take
-        await send_msg(player.data, name, game.players[name].down,
-                game.get_round(), 'took-take', state)
-
 async def handle_msg(game, msg, player_name):
     msg_split = msg.split()
     event = msg_split[0]
-    if event == 'start-game':
-        game.start_game()
-        resp = 'game-started'
-    elif event == 'take-throwcard':
-        game.take_throwcard(player_name)
-        resp = 'drew-card'
+    resp_data = {}
+    if event == 'update':
+        resp = 'update'
+        data = json.loads(' '.join(msg_split[1:]))
+        resp_data = data['updatedCards']
+        game.set_hand(player_name, data['playerCards'])
     elif event == 'draw-card':
-        got_take = game.do_takes(player_name)
-        game.draw_card(player_name)
-        if got_take is not None:
-            await send_take_info(game, got_take)
-        resp = 'drew-card'
-    elif event == 'discard':
-        game.finalize_tables(json.loads(' '.join(msg_split[3:])))
-        if game.discard(msg_split[1], msg_split[2], player_name):
-            resp = 'round-started'
-        else:
-            resp = 'turn-started'
-    elif event == 'validate-tables':
-        print(' '.join(msg_split[1:]))
-        tricks = json.loads(' '.join(msg_split[1:]))
-        valid = game.validate_tables(tricks)
-        print('valid: ' + str(valid))
-        if valid:
-            resp = 'tricks-valid'
-        else:
-            resp = 'tricks-invalid'
-    elif event == 'take-take':
-        game.players[player_name].pending_take = True
-        resp = None
+        resp = 'card-added'
+        c = game.deck.draw()
+        resp_data = {'card': c.to_json()}
 
-    return resp
+    return {'msg': resp, 'data': resp_data}
+
+async def add_player(game, ws, name):
+    game.add_player(ws, name)
+    hand = []
+    for _ in range(0, 10):
+        c = game.deck.draw()
+        hand.append(c.to_json())
+        print(c)
+        msg = {'msg': 'card-added', 'data': {'card': c.to_json()}, 'name':
+                name, 'names': game.players}
+        await send_msg(ws, msg)
+    game.set_hand(name, hand)
+
+"""
+async notify_lobby():
+    remove = []
+    msg = {'games': list(games.keys())}
+    for ws in lobby:
+        try:
+            await ws.send(json.dumps(msg))
+        except websockets.exceptions.ConnectionClosedOK:
+            remove.append(ws)
+    lobby = [x for x in lobby if x not in remove]
+"""
 
 async def run_server(websocket, path):
+    """
+    if path == 'lobby':
+        lobby.append(websocket)
+        msg = {'games': list(games.keys())}
+        send_msg(websocket, msg)
+    """
+
     _, game_name, player_name = path.split('/')
     if game_name not in games:
         games[game_name] = Game()
-
     game = games[game_name]
-    game.add_player(websocket, player_name)
 
-    for name, player in game.get_players().items():
-        await send_msg(player.data, name, False, 1, 'players-changed', game.get_state(name))
+    if player_name not in game.players:
+        await add_player(game, websocket, player_name)
+        for name in game.players:
+            resp = {'msg': 'player-added', 'names': game.players, 'name':
+                    name}
+            await send_msg(game.player_ws(name), resp)
+    else:
+        game.set_ws(player_name, websocket)
+        print(game.player_hand(player_name))
+        for c in game.player_hand(player_name):
+            print(c)
+            msg = {'msg': 'card-added', 'data': {'card': c}, 'name':
+                    player_name, 'names': game.players}
+            await send_msg(websocket, msg)
 
     async for msg in websocket:
-        print('recvd: ' + msg)
+        print('recvd from ' + player_name + ': ' + msg)
         resp = await handle_msg(game, msg, player_name)
         if resp is None:
             continue
-        print('sending: ' + resp)
+        print('sending: ' + json.dumps(resp))
         print()
-        for name, player in game.get_players().items():
-            await send_msg(player.data, name, game.players[name].down,
-                    game.get_round(), resp, game.get_state(name))
-
-    print('Removing ' + str(player_name))
-    game.remove_player(player_name)
+        # update messages go to all players
+        if resp['msg'] == 'update':
+            for name in game.players:
+                if name == player_name:
+                    continue
+                resp['name'] = name
+                print('sending to ' + name)
+                await send_msg(game.player_ws(name), resp)
+        # card added just goes to whoever got the card
+        elif resp['msg'] == 'card-added':
+            await send_msg(game.player_ws(player_name), resp)
 
 async def process_request(path, req_headers):
     print(path)
@@ -113,6 +162,7 @@ async def process_request(path, req_headers):
         return http.HTTPStatus.OK, headers, c
 
 start_server = websockets.serve(run_server, "127.0.0.1", 5678,
+#start_server = websockets.serve(run_server, "0.0.0.0", 80,
         process_request=process_request)
 print(type(start_server))
 

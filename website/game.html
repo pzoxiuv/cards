@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>WebSocket demo</title>
+	  	<link rel="stylesheet" href="cards.css">
+		<link rel="stylesheet" href="game.css">
+    </head>
+    <body>
+		<div id="init-els">
+			<input id="game-name" type="text" placeholder="Game name" size="10">
+			<input id="player-name" type="text" placeholder="Player name" size="10">
+			<input id="game-join" type="button" value="Join Game">
+		</div>
+		<div id="game-board">
+		<div id="draw-card" class="card back"></div>
+		</div>
+		<!--<div id="player-hand" class="player">Player Hand</div>-->
+		<script src="csswarp.0.7.js"></script>
+        <script>
+
+			var ws = undefined;
+
+			var maxCardId = 0;
+
+			var updatedCards = {};
+			var allCards = {};
+
+			var gameBoard = document.querySelector("#game-board");
+			var boardBox = gameBoard.getBoundingClientRect();
+
+			var cx = boardBox.width/2;//boardBox.x+(boardBox.width/2);
+			var cy = boardBox.height/2;//boardBox.y+(boardBox.height/2);
+
+			var drawCard = document.querySelector("#draw-card");
+			var drawCardBox = drawCard.getBoundingClientRect();
+
+			var names = undefined;
+
+			window.onresize = function() {
+				console.log("window resized");
+				boardBox = gameBoard.getBoundingClientRect();
+				cx = boardBox.width/2;
+				cy = boardBox.height/2;
+				if (names != undefined) {
+					drawNames(names);
+				}
+				drawCardBox = drawCard.getBoundingClientRect();
+				drawCard.style.left = (cx - drawCardBox.width/2)+"px";
+				drawCard.style.top = (cy - drawCardBox.height/2)+"px";
+			};
+
+			function drawNames(names) {
+				console.log(names);
+				var curLabels = document.querySelectorAll('.nameLabel');
+				console.log(curLabels);
+				for (i=0; i<curLabels.length; i++) {
+					console.log("removing " + curLabels[i]);
+					curLabels[i].remove();
+				}
+				for (var name in names) {
+					if (names.hasOwnProperty(name)) {
+						var nameLabel = document.createElement("div");
+						nameLabel.innerHTML = name;
+						nameLabel.id = "player-" + name;
+						nameLabel.classList.add("nameLabel");
+						document.body.append(nameLabel);
+						var path = {radius: boardBox.width/2-20, textPosition: "outside",
+							center: [cx+boardBox.x, cy], angle: names[name]+"deg"};
+						console.log("center: " + cx + " " + cy);
+						var myWarp = {path: path, targets: "#"+nameLabel.id};
+						cssWarp(myWarp);
+					}
+				}
+			}
+
+			function moveCard(e, card) {
+				var origCard = card.cloneNode();
+				var origParent = card.parentElement;
+				card.style.position = 'absolute';
+				card.style.zIndex = 2000000;
+				console.log(card.getBoundingClientRect());
+				var startLeft = card.getBoundingClientRect().left;
+				var startTop = card.getBoundingClientRect().top;
+				document.body.append(card);
+				moveAt(e.pageX, e.pageY);
+
+				function moveAt(pageX, pageY) {
+					parentBox = card.parentElement.getBoundingClientRect()
+					card.style.left = ((pageX - card.offsetWidth / 2) /
+						parentBox.width)*100 + '%';
+					card.style.top = ((pageY - card.offsetHeight / 2) /
+						parentBox.height)*100 + '%';
+					//card.style.left = pageX - card.offsetWidth / 2 + 'px';
+					//card.style.top = pageY - card.offsetHeight / 2 + 'px';
+				}
+
+				function overGameBoard(els) {
+					for (i=0; i<els.length; i++) {
+						if (els[i].id === "game-board") {
+							return true;
+						}
+					}
+					return false;
+				}
+
+				function onMouseMove(e) {
+					moveAt(e.pageX, e.pageY);
+
+					var els = document.elementsFromPoint(e.clientX,
+						e.clientY);
+					if (overGameBoard(els)) {
+						var parentBox = document.querySelector("#game-board").getBoundingClientRect();
+						rot = getRotation(e.clientX, e.clientY,
+								parentBox.left + parentBox.width/2,
+								parentBox.top + parentBox.height/2);
+						//card.style.transform = "rotate("+(rot+90)+"deg)";
+					}
+				}
+
+				function getDropTarget(elList) {
+					for (i=0; i<elList.length; i++) {
+						if (elList[i].id === "game-board") {
+							return elList[i];
+						} else if (elList[i].id === "deck-area") {
+							return elList[i];
+						} else if (elList[i] == document.body) {
+							return elList[i];
+						}
+					}
+					return elList[i-1];
+				}
+
+				function resetCard(card, left, top, origCard, origParent) {
+					card.style.left = startLeft;
+					card.style.top = startTop;
+					card.remove();
+					card = origCard;
+					origParent.appendChild(card);
+					card.ondragstart = function(e) {
+						return false;
+					}
+					card.onmousedown = function(e) {
+						moveCard(e, card);
+					};
+				}
+
+				// TODO: set timeout on dragging
+				document.addEventListener('mousemove', onMouseMove);
+
+				card.onmouseup = function(e) {
+					var els = document.elementsFromPoint(e.clientX,
+						e.clientY);
+					console.log(els);
+					var dropTarget = getDropTarget(els);
+					console.log("Drop target: ");
+					console.log(dropTarget);
+					console.log(origParent);
+					/* dropped on nothing (e.g. game board) */
+					//if (dropTarget === null) {
+					//	console.log("dropped no where");
+						//resetCard(card, startLeft, startTop, origCard,
+						//	origParent);
+					/* dropped on deck area (discarding) */
+					//} else if (dropTarget.id === "deck-area") {
+					if (dropTarget.id === "deck-area") {
+						console.log("dropped in discard area");
+						if (discard(card)) {
+							console.log("discard succeeded?");
+							return false;
+						}
+						resetCard(card, startLeft, startTop, origCard,
+							origParent);
+					} else {
+						console.log("dropped on new valid place");
+						card.remove();
+						dropTarget.appendChild(card);
+						var parentBox = dropTarget.getBoundingClientRect();
+						card.style.left = e.pageX - card.offsetWidth / 2 + 'px';
+						card.style.top = e.pageY - card.offsetHeight / 2 + 'px';
+						//card.style.left = ((e.clientX-parentBox.x) -
+						//	 (card.offsetWidth/2)) + 'px';
+						//card.style.top = ((e.clientY-parentBox.y) -
+						//	 (card.offsetHeight/2)) + 'px';
+						card.style.left = (((e.clientX-parentBox.x) -
+							 (card.offsetWidth/2))/parentBox.width)*100 + '%';
+						card.style.top = (((e.clientY-parentBox.y) -
+							 (card.offsetHeight/2))/parentBox.height)*100 + '%';
+
+						//if ((dropTarget.id === "game-board" || origParent.id ===
+						//	"game-board") && dropTarget.id !== "player-hand") {
+						if (dropTarget.id === "game-board") {
+							console.log(card);
+							var uc = {};
+							uc["dataset"] = card.dataset;
+							xp = (e.clientX-parentBox.x)/parentBox.width;
+							yp = (e.clientY-parentBox.y)/parentBox.height;
+							rot = getRotation(e.clientX, e.clientY,
+									parentBox.left + parentBox.width/2,
+									parentBox.top + parentBox.height/2);
+							//card.style.transform = "rotate("+(rot+90)+"deg)";
+							uc["coords"] = {"x": xp, "y": yp, "rot": rot+90}
+							updatedCards[card.id] = uc;
+						} else if (dropTarget.id !== "game-board" &&
+							dropTarget.id !== "deck-area" && origParent.id === "game-board") {
+							updatedCards[card.id] = "removed";
+							console.log("moved back to player hand");
+						}
+					}
+
+					document.removeEventListener('mousemove', onMouseMove);
+					card.onmouseup = null;
+					return false;
+				}
+			}
+
+			function getPlayerCards() {
+				var cards = [];
+				for (let i=0; i<document.body.children.length; i++) {
+		  			if (document.body.children[i].classList.contains("card")) {
+						cards.push(document.body.children[i].dataset);
+					}
+		  		}
+		  		return cards;
+			}
+
+			var timerId = setInterval(function() {
+				if (Object.keys(updatedCards).length > 0) {
+					console.log(updatedCards);
+					var cards = getPlayerCards();
+					data = {'updatedCards': updatedCards, 'playerCards': cards};
+					//ws.send("update " + JSON.stringify(updatedCards));
+					ws.send("update " + JSON.stringify(data));
+				};
+				updatedCards = {};
+			}, 1000);
+
+			function addCard(suit, rank, pos, parent, id) {
+				var card = document.createElement("div");
+				card.id = id;
+				card.dataset.rank = rank;
+				card.dataset.suit = suit;
+				card.draggable = true;
+				card.style.marginTop = ".2rem"
+				card.style.left = pos;
+				card.style.zIndex = 0;
+				card.ondragstart = function(e) {
+					return false;
+				}
+				card.onmousedown = function(e) {
+					return moveCard(e, card);
+				};
+				card.className = "card";
+				card.classList.add(suit);
+				card.classList.add("rank"+(rank+1));
+				card.classList.add("face");
+				card.disabled = true;
+				parent.appendChild(card);
+				return card;
+			}
+
+			function getRotation(x, y, cx, cy) {
+				return Math.atan2(y-cy, x-cx) * 180/Math.PI;
+			}
+
+			drawCard.style.left = (cx - drawCardBox.width/2)+"px";
+			drawCard.style.top = (cy - drawCardBox.height/2)+"px";
+
+			function wsRecv(e) {
+				const data = JSON.parse(e.data)
+				console.log(data)
+
+				myName = data["name"];
+				//myRot = data["theta"];
+				myRot = 0;
+
+				switch(data["msg"]) {
+					case "player-added":
+						names = data["names"];
+						console.log("Got names: " + names);
+						drawNames(data["names"]);
+						break;
+					case "update":
+						console.log("update");
+						console.log(boardBox);
+
+						for(const cardId in data["data"]) {
+							console.log(cardId);
+							console.log(data["data"][cardId]);
+
+							/* new card */
+							if (!allCards.hasOwnProperty(cardId)) {
+								console.log("Adding new card to table");
+								var card = addCard(data["data"][cardId]["dataset"]["suit"],
+									parseInt(data["data"][cardId]["dataset"]["rank"], 10), 100,
+									gameBoard, cardId);
+								allCards[cardId] = data["data"][cardId];
+
+								var x = data["data"][cardId]["coords"]["x"];
+								var y = data["data"][cardId]["coords"]["y"];
+								var rot = data["data"][cardId]["coords"]["rot"];
+								var cardBox = card.getBoundingClientRect();
+								var parentBox =
+									card.parentElement.getBoundingClientRect();
+								//card.style.left = (x*boardBox.width -
+								//	cardBox.width/2) + "px";
+								//card.style.top = (y*boardBox.height -
+								//	cardBox.height/2) + "px";
+								card.style.left = ((x*boardBox.width -
+									cardBox.width/2)/parentBox.width*100) + "%";
+								card.style.top = ((y*boardBox.height -
+									cardBox.height/2)/parentBox.height*100) + "%";
+								//card.style.transform = "rotate("+rot+"deg)";
+
+							/* removed card */
+							} else if (data["data"][cardId] === "removed") {
+								console.log("removing " + cardId);
+								var card = document.querySelector("#" + cardId);
+								card.remove();
+								delete allCards[cardId];
+
+							/* moved card */
+							} else {
+								console.log("moving " + cardId);
+								var card = document.querySelector("#" + cardId);
+								var x = data["data"][cardId]["coords"]["x"];
+								var y = data["data"][cardId]["coords"]["y"];
+								var rot = data["data"][cardId]["coords"]["rot"];
+								var cardBox = card.getBoundingClientRect();
+								var parentBox =
+									card.parentElement.getBoundingClientRect();
+								//card.style.left = (x*boardBox.width -
+								//	cardBox.width/2) + "px";
+								//card.style.top = (y*boardBox.height -
+								//	cardBox.height/2) + "px";
+								card.style.left = ((x*boardBox.width -
+									cardBox.width/2)/parentBox.width*100) + "%";
+								card.style.top = ((y*boardBox.height -
+									cardBox.height/2)/parentBox.height*100) + "%";
+								//card.style.transform = "rotate("+rot+"deg)";
+							}
+						}
+						break;
+					case "card-added":
+						console.log("adding card");
+						//var playerHand = document.querySelector("#player-hand");
+						var playerHand = document.body;
+						var id = "card-" + maxCardId + "-" + data["name"];
+						maxCardId += 1;
+						var card = addCard(data["data"]["card"]["suit"],
+							data["data"]["card"]["rank"], 100,
+							playerHand, id);
+						var uc = {};
+						uc["dataset"] = card.dataset;
+						uc["coords"] = {"x": card.style.left, "y":
+							card.style.top};
+						allCards[id] = uc;
+						break;
+					default:
+						console.log("Unkown event " + data["event"]);
+				}
+			}
+
+			function joinGame(gameName, playerName) {
+				if (ws == undefined) {
+					ws = new WebSocket("ws://127.0.0.1:5678/"+gameName+"/"+playerName);
+					ws.onmessage = wsRecv;
+				}
+			}
+
+			document.querySelector("#draw-card").onclick = function(e) {
+				ws.send("draw-card");
+			};
+
+			document.querySelector("#game-join").onclick = function(e) {
+				var gameName = document.querySelector('#game-name').value;
+				var playerName = document.querySelector('#player-name').value;
+				document.querySelector("#init-els").innerHTML = "";
+				joinGame(gameName, playerName);
+			};
+
+        </script>
+    </body>
+</html>

@@ -73,8 +73,10 @@ body {
   top: -2.75rem;*/
   left: 0rem;
   top: 0rem;
-  width: 3.875rem;
-  height: 5.5rem;
+  /*width: 3.875rem;
+  height: 5.5rem;*/
+  height: 3.75rem;
+  width: 2.63rem;
   background-color: #fff;
   -webkit-border-radius: 4px;
   border-radius: 4px;
