@@ -28,8 +28,8 @@
 			var gameBoard = document.querySelector("#game-board");
 			var boardBox = gameBoard.getBoundingClientRect();
 
-			var cx = boardBox.width/2;//boardBox.x+(boardBox.width/2);
-			var cy = boardBox.height/2;//boardBox.y+(boardBox.height/2);
+			var cx = boardBox.width/2;
+			var cy = boardBox.height/2;
 
 			var drawCard = document.querySelector("#draw-card");
 			var drawCardBox = drawCard.getBoundingClientRect();
@@ -73,6 +73,8 @@
 				}
 			}
 
+			var activeCard = null;
+
 			function moveCard(e, card) {
 				var origCard = card.cloneNode();
 				var origParent = card.parentElement;
@@ -82,7 +84,7 @@
 				var startLeft = card.getBoundingClientRect().left;
 				var startTop = card.getBoundingClientRect().top;
 				document.body.append(card);
-				moveAt(e.pageX, e.pageY);
+				var dragged = false;
 
 				function moveAt(pageX, pageY) {
 					parentBox = card.parentElement.getBoundingClientRect()
@@ -93,57 +95,91 @@
 				}
 
 				function onMouseMove(e) {
+					card.style.border = '2px solid gold';
 					moveAt(e.pageX, e.pageY);
-				}
-
-				function getDropTarget(elList) {
-					for (i=0; i<elList.length; i++) {
-						if (elList[i].id === "game-board") {
-							return elList[i];
-						} else if (elList[i] == document.body) {
-							return elList[i];
-						}
-					}
-					return elList[i-1];
+					dragged = true;
 				}
 
 				// TODO: set timeout on dragging
 				document.addEventListener('mousemove', onMouseMove);
 
 				card.onmouseup = function(e) {
-					var els = document.elementsFromPoint(e.clientX,
-						e.clientY);
-					console.log(els);
-					var dropTarget = getDropTarget(els);
-					console.log("Drop target: ");
-					console.log(dropTarget);
-					console.log(origParent);
-
-					card.remove();
-					dropTarget.appendChild(card);
-					var parentBox = dropTarget.getBoundingClientRect();
-					card.style.left = (((e.clientX-parentBox.x) -
-						 (card.offsetWidth/2))/parentBox.width)*100 + '%';
-					card.style.top = (((e.clientY-parentBox.y) -
-						 (card.offsetHeight/2))/parentBox.height)*100 + '%';
-
-					if (dropTarget.id === "game-board") {
-						console.log(card);
-						var uc = {};
-						uc["dataset"] = card.dataset;
-						xp = (e.clientX-parentBox.x)/parentBox.width;
-						yp = (e.clientY-parentBox.y)/parentBox.height;
-						uc["coords"] = {"x": xp, "y": yp}
-						updatedCards[card.id] = uc;
-					} else if (dropTarget.id !== "game-board" &&
-							   origParent.id === "game-board") {
-						updatedCards[card.id] = "removed";
-						console.log("moved back to player hand");
+					if (dragged) {
+						console.log("dragged");
+						mouseUp(e, card, origParent);
+						card.style.border = '';
+					} else {
+						document.body.onclick = function(e) {
+							console.log("clicked?");
+							console.log(e);
+							if (activeCard == null) {
+								console.log("setting card active");
+								card.style.border = '2px solid gold';
+								activeCard = card;
+								document.body.onkeyup = function(e) {
+									if (e.key == 'Escape' || e.key == 'Esc') {
+										activeCard = null;
+										card.style.border = '';
+										document.body.onkeyup = null;
+										document.body.onclick = null;
+									}
+								};
+							} else {
+								mouseUp(e, activeCard, origParent);
+								document.body.onclick = null;
+								activeCard = null;
+							}
+							return false;
+						}
 					}
-
+					console.log("here");
 					document.removeEventListener('mousemove', onMouseMove);
 					card.onmouseup = null;
 					return false;
+				}
+			}
+
+			function getDropTarget(elList) {
+				for (i=0; i<elList.length; i++) {
+					if (elList[i].id === "game-board") {
+						return elList[i];
+					} else if (elList[i] == document.body) {
+						return elList[i];
+					}
+				}
+				return elList[i-1];
+			}
+
+			function mouseUp(e, card, origParent) {
+				var els = document.elementsFromPoint(e.clientX,
+					e.clientY);
+				console.log(els);
+				var dropTarget = getDropTarget(els);
+				console.log("Drop target: ");
+				console.log(dropTarget);
+				console.log(origParent);
+
+				card.remove();
+				dropTarget.appendChild(card);
+				var parentBox = dropTarget.getBoundingClientRect();
+				card.style.left = (((e.clientX-parentBox.x) -
+					 (card.offsetWidth/2))/parentBox.width)*100 + '%';
+				card.style.top = (((e.clientY-parentBox.y) -
+					 (card.offsetHeight/2))/parentBox.height)*100 + '%';
+				card.style.border = '';
+
+				if (dropTarget.id === "game-board") {
+					console.log(card);
+					var uc = {};
+					uc["dataset"] = card.dataset;
+					xp = (e.clientX-parentBox.x)/parentBox.width;
+					yp = (e.clientY-parentBox.y)/parentBox.height;
+					uc["coords"] = {"x": xp, "y": yp}
+					updatedCards[card.id] = uc;
+				} else if (dropTarget.id !== "game-board" &&
+						   origParent.id === "game-board") {
+					updatedCards[card.id] = "removed";
+					console.log("moved back to player hand");
 				}
 			}
 
@@ -213,8 +249,6 @@
 						for(const cardId in data["data"]) {
 							console.log(cardId);
 							console.log(data["data"][cardId]);
-							var x = data["data"][cardId]["coords"]["x"];
-							var y = data["data"][cardId]["coords"]["y"];
 
 							/* new card */
 							if (!allCards.hasOwnProperty(cardId)) {
@@ -227,6 +261,8 @@
 								var cardBox = card.getBoundingClientRect();
 								var parentBox =
 									card.parentElement.getBoundingClientRect();
+								var x = data["data"][cardId]["coords"]["x"];
+								var y = data["data"][cardId]["coords"]["y"];
 								card.style.left = ((x*boardBox.width -
 									cardBox.width/2)/parentBox.width*100) + "%";
 								card.style.top = ((y*boardBox.height -
@@ -246,6 +282,8 @@
 								var cardBox = card.getBoundingClientRect();
 								var parentBox =
 									card.parentElement.getBoundingClientRect();
+								var x = data["data"][cardId]["coords"]["x"];
+								var y = data["data"][cardId]["coords"]["y"];
 								card.style.left = ((x*boardBox.width -
 									cardBox.width/2)/parentBox.width*100) + "%";
 								card.style.top = ((y*boardBox.height -
