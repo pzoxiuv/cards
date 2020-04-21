@@ -1,4 +1,3 @@
-from itertools import cycle
 from typing import List, Dict
 from random import shuffle
 from enum import Enum
@@ -69,44 +68,3 @@ class Deck():
 
     def draw_hand(self, n=10) -> List[Card]:
         return [self.draw() for x in range(0, n)]
-
-class Player():
-    def __init__(self, ws, name: str, theta: int):
-        self.hand = []
-        self.table = []
-        self.ws = ws
-        self.name = name
-        self.theta = theta
-
-    def add_card(self, c: Card) -> None:
-        self.hand.append(c)
-
-    def show_hand(self) -> None:
-        for i, c in enumerate(self.hand):
-            print('{}: {}'.format(i, c))
-
-    def get_hand(self) -> List[str]:
-        return [{'rank': x.rank.to_json(), 'suit': x.suit.to_json()} for x in self.hand]
-
-"""
-class Game():
-    def __init__(self):
-        self.deck = Deck(double=True)
-        self.players = {}
-        self.thetas = [0, 180, 60, 120, 240, 300]
-
-    def add_player(self, data, name: str) -> None:
-        if name in self.players:
-            self.players[name].data = data
-        else:
-            cur_theta = len(self.players)
-            player = Player(data, name, self.thetas[cur_theta])
-            player.hand = self.deck.draw_hand()
-            self.players[name] = player
-
-    def get_names(self):
-        ret = {}
-        for name, p in self.players.items():
-            ret[name] = p.theta
-        return ret
-"""

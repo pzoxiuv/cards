@@ -1,9 +1,5 @@
 #game-board {
-	/*height: 80%;*/
-	/*background: #c0c0c0;*/
 	border: 2px solid black;
-	/*height: 80vh;
-	width: 80vh;*/
 	height: 100vh;
 	width: 100vh;
 	position: relative;
@@ -12,125 +8,12 @@
 	border-radius: 50%;
 }
 
-/*
-.hexagon
-{   overflow: hidden;
-    visibility: hidden;
-    -webkit-transform: rotate(120deg);
-    -moz-transform: rotate(120deg);
-    -o-transform: rotate(120deg);
-    transform: rotate(120deg);
-    cursor: pointer;
-	position: relative;
-	zIndex: 1;
-	margin: 0 auto;
-}
-
-.hexagon-in1
-{   overflow: hidden;
-    width: 100%;
-    height: 100%;
-    -webkit-transform: rotate(-60deg);
-    -moz-transform: rotate(-60deg);
-    -o-transform: rotate(-60deg);
-    transform: rotate(-60deg);
-	margin: 0 auto;
-}
-
-.hexagon-in2
-{   width: 100%;
-    height: 100%;
-    background: #c0c0c0;
-    visibility: visible;
-    -webkit-transform: rotate(-60deg);
-    -moz-transform: rotate(-60deg);
-    -o-transform: rotate(-60deg);
-    transform: rotate(-60deg);
-	margin: 0 auto;
-}
-
-.hexagon1
-{   width: calc(100vh * 1.732);/*400px;*
-    height: 80vh; /*200px;*
-    /*margin: 0 0 0 -80px;*
-	margin: 0 auto;
-}*/
-
 #body {
 	height: 100%;
 	position: relative;
 }
 
-#status-els {
-	position: absolute;
-}
-
-/*
-.threewide {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	grid-column-gap: 5px;
-	/*border: 3px solid red;*
-	padding: 5px;
-}*/
-
-/*
-#row2 {
-	display: grid;
-	grid-template-columns: 27rem 1fr 27rem;
-	border: 3px solid red;
-}
-
-#row2col2 {
-	display: grid;
-	grid-template-rows: 1fr 9rem;
-	border: 3px solid blue;
-}
-
-#player-table {
-	border: 3px solid black;
-}*/
-
-#deck-area {
-	height: 6rem;
-	width: 5rem;
-	/*border: 3px solid black;*/
-	left: calc(50% - 4rem);
-	top: calc(50% - 5rem);
-	right: 0;
-
-	position: absolute;
-}
-
-#status {
-	position: absolute;
-}
-
 #draw-card {
-	/*border: 3px solid black;*/
-	/*left: calc(50% - 4rem);
-	top: calc(50% - 5rem);
-	right: 0;*/
-
 	position: absolute;
 	zIndex: 10000;
-	/*left: 5rem;*/
-}
-
-#player-hand {
-	/*top: calc(100% - 10rem);*/
-	top: 80%;
-	height: 20%;
-	width: 100%;
-	position: absolute;
-	border: 3px solid black;
-}
-
-.table {
-	display: grid;
-	grid-template-rows: 1fr 1fr 1fr;
-	grid-row-gap: 3px;
-	padding: 5px;
-	visibility: hidden;
-	/*border: 3px solid black;*/
 }
